@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Live-Frequenzanalyse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Sans+Condensed:wght@600&display=swap" rel="stylesheet">
+<style>
+/* VOICE: präzise Messgeräte-Sprache, ruhig, für Musiker
+   IDEA: ein Studio-Analyser im Rack – Display, Ablesefeld, Bedienleiste
+   PICTURE: großes Live-Spektrum mit Wasserfall darunter, Peak-Ton groß daneben
+   COLOUR and TYPE: tiefes Petrol als Display, Koralle als Signal, IBM Plex
+   LAYOUT: Display links breit, Ablesefeld rechts, Regler als Leiste darunter */
+:root{color-scheme:light dark;
+--bg:light-dark(#eef3f2,#0b1c1f);--panel:light-dark(#ffffff,#10272b);--disp:#0d2a2e;--line:light-dark(#c9d6d4,#1f3d42);
+--ink:light-dark(#0d2a2e,#e6f0ee);--mute:light-dark(#4f6b6a,#8fb0ad);--sig:#ff6b4a;--sig2:#ffd2a8;--ok:#3fd1a6}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "IBM Plex Sans",system-ui,sans-serif;overflow-x:clip}
+.band{padding:clamp(18px,3vw,40px) max(4vw,14px);max-width:1340px;margin:0 auto}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;justify-content:space-between;margin-bottom:18px}
+h1{font:700 clamp(28px,4vw,40px)/1.05 "IBM Plex Sans Condensed","IBM Plex Sans",sans-serif;margin:0;text-wrap:balance}
+#status{color:var(--mute);font-size:14px}
+button,select,input{font:inherit;font-size:16px;color:var(--ink)}
+button{min-height:44px;padding:0 20px;border-radius:10px;border:1px solid var(--line);background:var(--panel);cursor:pointer;font-weight:600}
+button.primary{background:var(--sig);border-color:var(--sig);color:#1a0b06}
+button[aria-pressed=true]{background:var(--ink);color:var(--bg)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--sig);outline-offset:2px}
+.rack{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px}
+.disp{background:var(--disp);border-radius:16px;padding:10px;box-shadow:inset 0 2px 0 rgba(255,255,255,.06),0 10px 30px rgba(0,0,0,.18)}
+.fig{position:relative}.fig>canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#specBox{height:clamp(260px,42vh,440px)}#wfBox{height:clamp(140px,22vh,240px);margin-top:8px;border-top:1px solid #1f4a50}
+.read{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:14px}
+.lab{font-size:13px;color:var(--mute)}
+#hz{font:700 clamp(36px,5vw,52px)/1 "IBM Plex Sans Condensed",sans-serif;white-space:nowrap;font-variant-numeric:tabular-nums}
+#hz small{font-size:20px;color:var(--mute);margin-left:4px}
+#note{font:700 32px/1 "IBM Plex Sans Condensed",sans-serif}
+.tuner{position:relative;height:28px;border-radius:8px;background:linear-gradient(90deg,transparent 0 48%,color-mix(in srgb,var(--ok) 25%,transparent) 48% 52%,transparent 52%),var(--bg);border:1px solid var(--line)}
+.tuner i{position:absolute;top:3px;bottom:3px;width:4px;margin-left:-2px;left:50%;border-radius:2px;background:var(--sig);transition:left .08s}
+.tuner span{position:absolute;bottom:-20px;font-size:13px;color:var(--mute)}
+#cents{font-variant-numeric:tabular-nums}
+.meter{height:12px;border-radius:6px;background:var(--bg);border:1px solid var(--line);overflow:hidden}
+.meter b{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ok),var(--sig2) 75%,var(--sig))}
+.peaks{margin:0;padding:0;list-style:none;font-variant-numeric:tabular-nums;font-size:15px}
+.peaks li{display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:4px 0}
+.peaks li span:last-child{color:var(--mute)}
+.ctl{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px 18px;align-items:end}
+.ctl label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute)}
+select,input[type=number]{min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--bg);padding:0 10px}
+input[type=range]{accent-color:var(--sig);min-height:44px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.hint{margin-top:14px;color:var(--mute);font-size:14px;max-width:75ch}
+#err{display:none;margin:0 0 14px;padding:12px 16px;border-radius:10px;background:color-mix(in srgb,var(--sig) 18%,var(--panel));border:1px solid var(--sig)}
+@media(max-width:820px){.rack{grid-template-columns:minmax(0,1fr)}.read{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}
+@media(prefers-reduced-motion:reduce){.tuner i{transition:none}}
+</style>
+</head>
+<body>
+<div class="band">
+<header>
+  <div><h1>Live-Frequenzanalyse</h1><div id="status">Mikrofon aus – auf Start drücken</div></div>
+  <div class="row">
+    <button id="start" class="primary">Start</button>
+    <button id="freeze" aria-pressed="false" disabled>Einfrieren</button>
+  </div>
+</header>
+<p id="err"></p>
+<div class="rack">
+  <div class="disp">
+    <div class="fig" id="specBox"><canvas id="spec"></canvas></div>
+    <div class="fig" id="wfBox"><canvas id="wf"></canvas></div>
+  </div>
+  <aside class="read">
+    <div><div class="lab">Stärkste Frequenz</div><div id="hz">–<small>Hz</small></div></div>
+    <div><div class="lab">Ton</div><div id="note">–</div></div>
+    <div><div class="lab">Abweichung <span id="cents">– ct</span></div>
+      <div class="tuner"><i id="needle"></i><span style="left:0">−50</span><span style="left:calc(50% - 4px)">0</span><span style="right:0">+50</span></div></div>
+    <div style="margin-top:10px"><div class="lab">Pegel <span id="db">– dBFS</span></div><div class="meter"><b id="lvl"></b></div></div>
+    <div><div class="lab">Weitere Spitzen</div><ul class="peaks" id="peaks"><li><span>–</span><span></span></li></ul></div>
+  </aside>
+</div>
+<section class="ctl">
+  <label>Frequenzbereich
+    <select id="range">
+      <option value="25,500">E-Bass (25–500 Hz)</option>
+      <option value="60,1500">Gesang/Melodie (60–1500 Hz)</option>
+      <option value="20,20000" selected>Voll (20 Hz–20 kHz)</option>
+      <option value="1000,20000">Höhen (1–20 kHz)</option>
+    </select></label>
+  <label>Auflösung (FFT)
+    <select id="fft"><option>2048</option><option>4096</option><option selected>8192</option><option>16384</option><option>32768</option></select></label>
+  <label>Glättung <input type="range" id="smooth" min="0" max="0.95" step="0.05" value="0.75"></label>
+  <label>Untergrenze <span id="minDbV">−100 dB</span><input type="range" id="minDb" min="-130" max="-50" step="5" value="-100"></label>
+  <label>Kammerton a′ (Hz) <input type="number" id="a4" min="400" max="480" step="0.5" value="440"></label>
+  <label>Eingang <select id="dev"><option value="">Standard-Mikrofon</option></select></label>
+  <div class="row">
+    <button id="hold" aria-pressed="true">Peak-Hold</button>
+    <button id="strings" aria-pressed="false">Bass-Saiten</button>
+  </div>
+</section>
+<p class="hint">Das Mikrofon läuft ohne Echo- und Rauschunterdrückung, damit das Spektrum unverfälscht bleibt. Für tiefe Basstöne ist eine höhere FFT-Auflösung genauer, reagiert aber etwas träger. Die Seite braucht <b>https</b> oder eine lokal geöffnete Datei, sonst gibt der Browser das Mikrofon nicht frei.</p>
+</div>
+<script>
+{
+const $=id=>document.getElementById(id);
+const NAMES=['C','Cis','D','Dis','E','F','Fis','G','Gis','A','B','H'];
+const BASS=[['E',41.2],['A',55],['D',73.42],['G',98]];
+let ctx=null,an=null,src=null,stream=null,buf=null,sr=48000,run=false,frozen=false;
+let fmin=20,fmax=20000,minDb=-100,maxDb=-10,hold=null,raf=0;
+const spec=$('spec'),wf=$('wf'),sc=spec.getContext('2d'),wc=wf.getContext('2d');
+let showHold=true,showStr=false;
+
+function fit(c){const r=c.getBoundingClientRect(),d=devicePixelRatio||1;const w=Math.max(1,Math.round(r.width*d)),h=Math.max(1,Math.round(r.height*d));if(c.width!==w||c.height!==h){c.width=w;c.height=h;return true}return false}
+const roS=new ResizeObserver(()=>{fit(spec);hold=null;if(!run)drawIdle()});roS.observe(spec);
+const roW=new ResizeObserver(()=>{if(fit(wf)){wc.fillStyle='#0d2a2e';wc.fillRect(0,0,wf.width,wf.height)}});roW.observe(wf);
+
+const xOf=(f,W)=>Math.log(f/fmin)/Math.log(fmax/fmin)*W;
+const fOf=(x,W)=>fmin*Math.pow(fmax/fmin,x/W);
+const fmtHz=f=>f>=1000?(f/1000).toFixed(f>=10000?1:2)+' k':f.toFixed(f<100?1:0);
+function noteOf(f){const a4=parseFloat($('a4').value)||440;const n=12*Math.log2(f/a4)+57;const r=Math.round(n);return{name:NAMES[(r%12+12)%12],oct:Math.floor(r/12),cents:(n-r)*100}}
+function colormap(t){t=Math.max(0,Math.min(1,t));const s=[[13,42,46],[20,90,100],[255,107,74],[255,210,168],[255,250,235]];const p=t*(s.length-1),i=Math.min(s.length-2,Math.floor(p)),k=p-i;return s[i].map((v,j)=>Math.round(v+(s[i+1][j]-v)*k))}
+
+function grid(W,H){
+  const d=devicePixelRatio||1;sc.font=`${12*d}px "IBM Plex Sans",sans-serif`;sc.lineWidth=1;
+  for(let db=Math.ceil(minDb/10)*10;db<=maxDb;db+=10){const y=H-(db-minDb)/(maxDb-minDb)*H;sc.strokeStyle='rgba(143,176,173,.13)';sc.beginPath();sc.moveTo(0,y);sc.lineTo(W,y);sc.stroke();if(db%20===0&&y>16*d&&y<H-20*d){sc.fillStyle='rgba(143,176,173,.7)';sc.fillText(db+' dB',6*d,y-4*d)}}
+  const ticks=[20,30,50,100,200,300,500,1000,2000,3000,5000,10000,20000];const narrow=W/d<520;
+  for(const f of ticks){if(f<fmin||f>fmax)continue;if(narrow&&[30,300,3000].includes(f))continue;const x=xOf(f,W);sc.strokeStyle='rgba(143,176,173,.2)';sc.beginPath();sc.moveTo(x,0);sc.lineTo(x,H);sc.stroke();sc.fillStyle='rgba(200,225,222,.8)';const t=fmtHz(f).replace(' ','');sc.fillText(t,Math.min(x+4*d,W-sc.measureText(t).width-4*d),H-6*d)}
+  if(showStr){for(const[n,f]of BASS){if(f<fmin||f>fmax)continue;const x=xOf(f,W);sc.strokeStyle='rgba(63,209,166,.55)';sc.setLineDash([4*d,4*d]);sc.beginPath();sc.moveTo(x,18*d);sc.lineTo(x,H-22*d);sc.stroke();sc.setLineDash([]);sc.fillStyle='#3fd1a6';sc.fillText(n,x+4*d,16*d)}}
+}
+function drawIdle(){const W=spec.width,H=spec.height;sc.fillStyle='#0d2a2e';sc.fillRect(0,0,W,H);grid(W,H);const d=devicePixelRatio||1;sc.fillStyle='rgba(230,240,238,.75)';sc.font=`${16*d}px "IBM Plex Sans",sans-serif`;sc.textAlign='center';sc.fillText('Start drücken und Mikrofon erlauben',W/2,H/2);sc.textAlign='start'}
+
+function binVal(f){return buf[Math.round(f/(sr/an.fftSize))]}
+function frame(){
+  raf=requestAnimationFrame(frame);
+  if(frozen)return;
+  an.getFloatFrequencyData(buf);
+  const W=spec.width,H=spec.height,binHz=sr/an.fftSize,N=buf.length;
+  if(!hold||hold.length!==W)hold=new Float32Array(W).fill(-200);
+  const col=new Float32Array(W);
+  for(let x=0;x<W;x++){
+    const b0=Math.max(1,Math.floor(fOf(x,W)/binHz)),b1=Math.min(N-1,Math.max(b0,Math.floor(fOf(x+1,W)/binHz)));
+    let m=-200;for(let b=b0;b<=b1;b++)if(buf[b]>m)m=buf[b];
+    if(b0===b1&&b0+1<N){const fx=fOf(x+.5,W)/binHz,k=fx-b0;m=buf[b0]*(1-k)+buf[Math.min(N-1,b0+1)]*k}
+    col[x]=m;hold[x]=Math.max(m,hold[x]-0.35);
+  }
+  sc.fillStyle='#0d2a2e';sc.fillRect(0,0,W,H);grid(W,H);
+  const yOf=v=>H-Math.max(0,Math.min(1,(v-minDb)/(maxDb-minDb)))*H;
+  const g=sc.createLinearGradient(0,0,0,H);g.addColorStop(0,'rgba(255,107,74,.75)');g.addColorStop(1,'rgba(255,107,74,.04)');
+  sc.beginPath();sc.moveTo(0,H);for(let x=0;x<W;x++)sc.lineTo(x,yOf(col[x]));sc.lineTo(W,H);sc.closePath();sc.fillStyle=g;sc.fill();
+  sc.beginPath();for(let x=0;x<W;x++)x?sc.lineTo(x,yOf(col[x])):sc.moveTo(x,yOf(col[x]));sc.strokeStyle='#ff6b4a';sc.lineWidth=1.5*(devicePixelRatio||1);sc.stroke();
+  if(showHold){sc.beginPath();for(let x=0;x<W;x++)x?sc.lineTo(x,yOf(hold[x])):sc.moveTo(x,yOf(hold[x]));sc.strokeStyle='rgba(255,210,168,.55)';sc.lineWidth=1;sc.stroke()}
+
+  // Peaks im sichtbaren Bereich
+  const lo=Math.max(2,Math.floor(fmin/binHz)),hi=Math.min(N-2,Math.ceil(fmax/binHz));
+  const pk=[];for(let b=lo;b<=hi;b++){const v=buf[b];if(v>buf[b-1]&&v>=buf[b+1]&&v>minDb+15)pk.push(b)}
+  pk.sort((a,b)=>buf[b]-buf[a]);
+  const picked=[];for(const b of pk){if(picked.every(p=>Math.abs(Math.log2(p.f/(b*binHz)))>0.03)){const a=buf[b-1],c=buf[b],e=buf[b+1],den=a-2*c+e,off=den?0.5*(a-e)/den:0;picked.push({f:(b+off)*binHz,v:c-0.25*(a-e)*off})}if(picked.length>=5)break}
+  const d=devicePixelRatio||1;
+  if(picked.length){const p=picked[0],x=xOf(p.f,W),y=yOf(p.v);sc.fillStyle='#fffaeb';sc.beginPath();sc.arc(x,y,4*d,0,7);sc.fill();
+    const n=noteOf(p.f);$('hz').innerHTML=(p.f<1000?p.f.toFixed(1):p.f.toFixed(0))+'<small>Hz</small>';$('note').textContent=n.name+n.oct;
+    $('cents').textContent=(n.cents>=0?'+':'−')+Math.abs(n.cents).toFixed(0)+' ct';$('needle').style.left=(50+n.cents)+'%';
+    $('peaks').innerHTML=picked.slice(1).map(q=>{const m=noteOf(q.f);return`<li><span>${q.f<1000?q.f.toFixed(1):q.f.toFixed(0)} Hz</span><span>${m.name}${m.oct} · ${q.v.toFixed(0)} dB</span></li>`}).join('')||'<li><span>–</span><span></span></li>';
+  }else{$('hz').innerHTML='–<small>Hz</small>';$('note').textContent='–';$('cents').textContent='– ct';$('needle').style.left='50%'}
+
+  // Pegel (RMS)
+  const td=new Float32Array(an.fftSize);an.getFloatTimeDomainData(td);let s=0;for(let i=0;i<td.length;i++)s+=td[i]*td[i];
+  const rms=20*Math.log10(Math.sqrt(s/td.length)+1e-9);$('db').textContent=(rms<-99?'−∞':rms.toFixed(1))+' dBFS';$('lvl').style.width=Math.max(0,Math.min(100,(rms+70)/70*100))+'%';
+
+  // Wasserfall
+  const WW=wf.width,WH=wf.height,step=Math.max(1,Math.round(d));
+  wc.drawImage(wf,-step,0);const img=wc.createImageData(step,WH);
+  for(let y=0;y<WH;y++){const f=fOf(WH-1-y,WH)*1;const fx=fmin*Math.pow(fmax/fmin,(WH-1-y)/WH);const v=binVal(fx);const [r,gg,bb]=colormap((v-minDb)/(maxDb-minDb));for(let k=0;k<step;k++){const i=(y*step+k)*4;img.data[i]=r;img.data[i+1]=gg;img.data[i+2]=bb;img.data[i+3]=255}}
+  wc.putImageData(img,WW-step,0);
+}
+
+async function listDevices(){try{const ds=(await navigator.mediaDevices.enumerateDevices()).filter(x=>x.kind==='audioinput');const cur=$('dev').value;$('dev').innerHTML='<option value="">Standard-Mikrofon</option>'+ds.map((x,i)=>`<option value="${x.deviceId}">${(x.label||'Eingang '+(i+1)).replace(/</g,'&lt;')}</option>`).join('');$('dev').value=cur}catch(e){}}
+function err(m){$('err').textContent=m;$('err').style.display=m?'block':'none'}
+
+async function start(){
+  err('');
+  if(!navigator.mediaDevices?.getUserMedia){err('Dieser Browser gibt hier kein Mikrofon frei. Öffne die Seite über https (z. B. GitHub Pages) oder als lokale Datei in Chrome, Edge oder Firefox.');return}
+  try{
+    const id=$('dev').value;
+    stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:id?{exact:id}:undefined,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  }catch(e){err('Kein Mikrofonzugriff: '+(e.name==='NotAllowedError'?'Zugriff wurde abgelehnt. Erlaube das Mikrofon in den Browser-Einstellungen für diese Seite.':e.message));return}
+  ctx=ctx||new (window.AudioContext||window.webkitAudioContext)();await ctx.resume();sr=ctx.sampleRate;
+  src=ctx.createMediaStreamSource(stream);an=ctx.createAnalyser();an.minDecibels=-140;an.maxDecibels=0;
+  an.fftSize=+$('fft').value;an.smoothingTimeConstant=+$('smooth').value;src.connect(an);buf=new Float32Array(an.frequencyBinCount);
+  run=true;hold=null;$('start').textContent='Stop';$('freeze').disabled=false;
+  $('status').textContent=`Läuft · ${sr} Hz Abtastrate · ${(sr/an.fftSize).toFixed(2)} Hz pro Bin`;
+  listDevices();cancelAnimationFrame(raf);frame();
+}
+function stop(){run=false;cancelAnimationFrame(raf);stream?.getTracks().forEach(t=>t.stop());src?.disconnect();stream=src=null;$('start').textContent='Start';$('freeze').disabled=true;frozen=false;$('freeze').setAttribute('aria-pressed','false');$('status').textContent='Mikrofon aus – auf Start drücken';drawIdle()}
+
+$('start').addEventListener('click',()=>run?stop():start());
+$('freeze').addEventListener('click',e=>{frozen=!frozen;e.currentTarget.setAttribute('aria-pressed',frozen)});
+$('range').addEventListener('change',e=>{[fmin,fmax]=e.target.value.split(',').map(Number);if(an)fmax=Math.min(fmax,sr/2);hold=null;if(fmin<100&&fmax<=500&&!showStr){showStr=true;$('strings').setAttribute('aria-pressed','true')}if(!run)drawIdle()});
+$('fft').addEventListener('change',e=>{if(an){an.fftSize=+e.target.value;buf=new Float32Array(an.frequencyBinCount);$('status').textContent=`Läuft · ${sr} Hz Abtastrate · ${(sr/an.fftSize).toFixed(2)} Hz pro Bin`}});
+$('smooth').addEventListener('input',e=>{if(an)an.smoothingTimeConstant=+e.target.value});
+$('minDb').addEventListener('input',e=>{minDb=+e.target.value;$('minDbV').textContent='−'+Math.abs(minDb)+' dB';if(!run)drawIdle()});
+$('hold').addEventListener('click',e=>{showHold=!showHold;hold=null;e.currentTarget.setAttribute('aria-pressed',showHold)});
+$('strings').addEventListener('click',e=>{showStr=!showStr;e.currentTarget.setAttribute('aria-pressed',showStr);if(!run)drawIdle()});
+$('dev').addEventListener('change',()=>{if(run){stop();start()}});
+navigator.mediaDevices?.addEventListener?.('devicechange',listDevices);
+fit(spec);fit(wf);wc.fillStyle='#0d2a2e';wc.fillRect(0,0,wf.width,wf.height);drawIdle();
+}
+</script>
+</body>
+</html>
