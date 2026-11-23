@@ -1,0 +1,8 @@
+Die Schriften "Frequenz Sans" und "Frequenz Sans Condensed" sind veränderte
+Fassungen (Zeichenumfang reduziert, ins WOFF-Format umgewandelt) von
+IBM Plex Sans und IBM Plex Sans Condensed, Copyright © 2017 IBM Corp.
+with Reserved Font Name "Plex".
+
+Weil "Plex" ein geschützter Schriftname (Reserved Font Name) ist, tragen die
+veränderten Fassungen gemäß SIL Open Font License 1.1 einen anderen Namen.
+Lizenztext: OFL-IBMPlex.txt
